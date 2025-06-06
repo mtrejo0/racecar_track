@@ -180,11 +180,28 @@ function setup() {
     initThreeJS();
     createGround(); // Add grass ground
     createCar();
+    
+    // Generate track waypoints FIRST
+    generateTrackWaypoints();
+    
+    // Then create track using the waypoints
     createTrack();
     setupCameras();
     
-    // Generate track waypoints for AI or guidance
-    generateTrackWaypoints();
+    // Position car at first waypoint to ensure it starts on track
+    if (trackWaypoints.length > 0) {
+        const startWaypoint = trackWaypoints[0];
+        carPosition.x = startWaypoint.x;
+        carPosition.z = startWaypoint.z;
+        carPosition.y = 0;
+        
+        // Set car rotation to face along the track
+        carRotation = startWaypoint.angle;
+        
+        // Update car mesh position
+        car.position.set(carPosition.x, carPosition.y, carPosition.z);
+        car.rotation.y = carRotation;
+    }
 }
 
 function initThreeJS() {
@@ -303,38 +320,38 @@ function createCar() {
 function createTrack() {
     track = new THREE.Group();
     
-    // Track parameters - wider track
-    const segments = 200;
-    const radius = 300;
-    
-    // Create track surface
+    // Use the existing trackWaypoints array instead of generating new points
     const trackPoints = [];
     const innerPoints = [];
     const outerPoints = [];
     
-    for (let i = 0; i <= segments; i++) {
-        const angle = (i / segments) * Math.PI * 2;
+    // Convert existing waypoints to track geometry
+    for (let i = 0; i < trackWaypoints.length; i++) {
+        const waypoint = trackWaypoints[i];
         
-        // Create 9 bends by modulating the radius
-        let currentRadius = radius;
-        const bendFactor = Math.sin(angle * 4.5) * 50; // 4.5 creates 9 bends
-        currentRadius += bendFactor;
+        trackPoints.push(new THREE.Vector3(waypoint.x, 0, waypoint.z));
         
-        const x = Math.cos(angle) * currentRadius;
-        const z = Math.sin(angle) * currentRadius;
+        // Calculate perpendicular direction for track width
+        let perpAngle;
+        if (i < trackWaypoints.length - 1) {
+            // Use direction to next waypoint
+            const nextWaypoint = trackWaypoints[i + 1];
+            perpAngle = Math.atan2(nextWaypoint.z - waypoint.z, nextWaypoint.x - waypoint.x) + Math.PI / 2;
+        } else {
+            // For last waypoint, connect back to first waypoint for closed loop
+            const firstWaypoint = trackWaypoints[0];
+            perpAngle = Math.atan2(firstWaypoint.z - waypoint.z, firstWaypoint.x - waypoint.x) + Math.PI / 2;
+        }
         
-        trackPoints.push(new THREE.Vector3(x, 0, z));
+        // Create inner and outer points based on track width
+        const halfWidth = trackWidth / 2;
+        const innerX = waypoint.x + Math.cos(perpAngle) * halfWidth;
+        const innerZ = waypoint.z + Math.sin(perpAngle) * halfWidth;
+        const outerX = waypoint.x - Math.cos(perpAngle) * halfWidth;
+        const outerZ = waypoint.z - Math.sin(perpAngle) * halfWidth;
         
-        // Inner and outer track boundaries - wider track
-        const innerRadius = currentRadius - trackWidth / 2;
-        const outerRadius = currentRadius + trackWidth / 2;
-        
-        innerPoints.push(new THREE.Vector3(
-            Math.cos(angle) * innerRadius, 0, Math.sin(angle) * innerRadius
-        ));
-        outerPoints.push(new THREE.Vector3(
-            Math.cos(angle) * outerRadius, 0, Math.sin(angle) * outerRadius
-        ));
+        innerPoints.push(new THREE.Vector3(innerX, 0, innerZ));
+        outerPoints.push(new THREE.Vector3(outerX, 0, outerZ));
     }
     
     // Store track boundaries for collision detection
@@ -346,12 +363,14 @@ function createTrack() {
     const vertices = [];
     const indices = [];
     
-    // Create track surface vertices
-    for (let i = 0; i < segments; i++) {
+    // Create track surface vertices (close the loop)
+    for (let i = 0; i < trackPoints.length; i++) {
+        const nextIndex = (i + 1) % trackPoints.length; // Wrap around to close the loop
+        
         const inner1 = innerPoints[i];
         const outer1 = outerPoints[i];
-        const inner2 = innerPoints[i + 1];
-        const outer2 = outerPoints[i + 1];
+        const inner2 = innerPoints[nextIndex];
+        const outer2 = outerPoints[nextIndex];
         
         vertices.push(
             inner1.x, inner1.y, inner1.z,
@@ -506,13 +525,18 @@ function setupCameras() {
 }
 
 function generateTrackWaypoints() {
-    const segments = 100;
-    const radius = 300;
+    const segments = 200; // Match createTrack segments
+    const radius = 300;   // Match createTrack radius
     
+    trackWaypoints = [];
+    
+    // Continue with circular track generation
     for (let i = 0; i <= segments; i++) {
         const angle = (i / segments) * Math.PI * 2;
+        
+        // Use same bend calculation as createTrack
         let currentRadius = radius;
-        const bendFactor = Math.sin(angle * 4.5) * 50;
+        const bendFactor = Math.sin(angle * 4.5) * 50; // Match createTrack exactly
         currentRadius += bendFactor;
         
         const x = Math.cos(angle) * currentRadius;
